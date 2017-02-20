@@ -13,6 +13,7 @@ from reportlab.lib.units import inch
 
 PAGESIZE = (3.5 * inch, 5.5 * inch)
 HEIGHT, WIDTH = PAGESIZE
+DELIVERY_PREFIX = "Delivery Zone"
 
 
 def iterate_csv(csv_path):
@@ -32,11 +33,11 @@ def remote_tempfile(path):
 def refund_postage(shipments):
     for shipment in shipments:
         try:
-            print("Refunding purchased postage: {0}".format(
-                shipment.tracking_code))
+            print("Refunding purchased postage for: {0}".format(
+                shipment.to_address.name))
             shipment.refund()
-        except:
-            print("Error refunding postage for: {0}".format(shipment))
+        except Exception as error:
+            print("Error refunding postage: {0}".format(error))
             continue
 
 
@@ -44,6 +45,9 @@ def generate_shipments(address, parcel, csv_path):
     shipments = []
     for row in iterate_csv(csv_path):
         print("Creating shipment to: {0}".format(row["SendTo"]))
+        print_custom = None
+        if row["Zone"]:
+            print_custom = DELIVERY_PREFIX + " {0}".format(row["Zone"])
         shipments.append(easypost.Shipment.create(
             from_address=address,
             parcel=parcel,
@@ -54,9 +58,10 @@ def generate_shipments(address, parcel, csv_path):
                 "city": row["City"],
                 "state": row["State"][:2].upper(),
                 "zip": row["Zip"],
-                "verify_strict": ["delivery"]
+                "verify_strict": ["delivery"],
             },
-            options={"label_size": "4x6", "label_format": "PDF"}))
+            options={"label_size": "4x6", "label_format": "PDF",
+                     "print_custom_1": print_custom}))
     return shipments
 
 
@@ -76,6 +81,11 @@ def purchase_postage(shipments):
                     "wb"
             ) as outfile:
                 outfile.write(response.read())
+            if (
+                    shipment.options.get("print_custom_1") and
+                    DELIVERY_PREFIX in shipment.options["print_custom_1"]
+            ):
+                refund_postage([shipment])
 
     except Exception as error:
         print("Error purchasing postage for {0}: {1}".format(
